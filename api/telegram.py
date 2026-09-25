@@ -66,7 +66,9 @@ def _generate(model, key, question):
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": question}]}],
-        "generationConfig": {"temperature": 0.6, "maxOutputTokens": 800},
+        # Newer Gemini models spend part of this budget on internal thinking, so leave plenty
+        # of room; the system prompt keeps the visible answer short.
+        "generationConfig": {"temperature": 0.6, "maxOutputTokens": 4096},
     }
     req = urllib.request.Request(
         GEMINI_URL.format(model=model),
@@ -104,11 +106,17 @@ def ask_gemini(question):
         return "Sorry, I couldn't answer that just now. Please try again in a minute."
 
     try:
-        parts = data["candidates"][0]["content"]["parts"]
-        text = "".join(p.get("text", "") for p in parts).strip()
+        candidate = data["candidates"][0]
+        parts = candidate["content"]["parts"]
+        text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
     except (KeyError, IndexError):
         print(f"Unexpected Gemini response: {json.dumps(data)[:500]}")
-        text = ""
+        candidate, text = {}, ""
+    if candidate.get("finishReason") == "MAX_TOKENS" and text:
+        # Cut off mid-sentence: end at the last complete sentence instead.
+        cut = max(text.rfind(". "), text.rfind(".\n"), text.rfind("? "), text.rfind("?\n"))
+        text = text[: cut + 1] if cut > len(text) // 3 else text + "…"
+        print(f"Gemini reply hit the token limit ({model}); trimmed")
     # Telegram gets plain text, so strip any markdown emphasis Gemini adds anyway.
     text = re.sub(r"\*\*(.+?)\*\*|__(.+?)__", lambda m: m.group(1) or m.group(2), text)
     return text or "I don't have a good answer to that one. Could you rephrase it?"

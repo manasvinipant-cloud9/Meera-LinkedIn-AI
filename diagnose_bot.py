@@ -194,11 +194,13 @@ def main():
         orig_print = __builtins__.print
         errors = []
         bot_code.print = lambda *a, **k: errors.append(" ".join(map(str, a)).replace(key, "<key>"))
-        answer = bot_code.ask_gemini("Can I use niacinamide with vitamin C?")
+        answer = bot_code.ask_gemini(input("  Question to ask (Enter for a default): ").strip()
+                                     or "Can I use niacinamide with vitamin C?")
+        info_notes = ("unavailable; using", "trimmed")
         for note in errors:
-            if "unavailable; using" in note:
+            if any(n in note for n in info_notes):
                 print(f"  ℹ️  {note}")
-        errors = [e for e in errors if "unavailable; using" not in e]
+        errors = [e for e in errors if not any(n in e for n in info_notes)]
         if errors:
             bad(errors[0], "Check the key in Google AI Studio, or set GEMINI_MODEL to a model your key can use.")
         elif answer.startswith("Sorry"):

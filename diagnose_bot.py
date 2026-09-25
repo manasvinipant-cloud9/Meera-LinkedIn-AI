@@ -13,6 +13,7 @@ import getpass
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -54,7 +55,37 @@ def bad(msg, fix=None):
 
 
 def ask(question):
-    return input(f"\n{question} [y/N] ").strip().lower() == "y"
+    while True:
+        answer = input(f"\n{question} Type y or n: ").strip().lower()
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("", "n", "no"):
+            return False
+        # Something else was typed or pasted here, often a key meant for the next (hidden) prompt.
+        print("\033[1A\033[2K", end="")  # erase the echoed line from the screen
+        print("  ⚠️  That wasn't y or n. If you pasted a key or token here, it was visible on screen: "
+              "create a new one to be safe.\n     Answer y or n first. You'll get a hidden prompt for the key next.")
+
+
+def wait_for_chats(seconds=120):
+    """Long-poll Telegram while the user adds the bot to the channel."""
+    chats, deadline = {}, time.time() + seconds
+    offset = None
+    while time.time() < deadline and not any(c["type"] == "channel" for c in chats.values()):
+        left = int(deadline - time.time())
+        print(f"\r  ⏳ Waiting for the bot to be added / a channel post… {left:3d}s left ", end="", flush=True)
+        params = {"timeout": min(20, max(1, left)),
+                  "allowed_updates": ["message", "channel_post", "my_chat_member"]}
+        if offset:
+            params["offset"] = offset
+        for upd in api("getUpdates", params).get("result", []):
+            offset = upd["update_id"] + 1
+            for key in ("message", "channel_post", "my_chat_member"):
+                chat = (upd.get(key) or {}).get("chat")
+                if chat:
+                    chats[chat["id"]] = chat
+    print()
+    return chats
 
 
 def main():
@@ -102,6 +133,12 @@ def main():
                 chat = (upd.get(key) or {}).get("chat")
                 if chat:
                     chats[chat["id"]] = chat
+        if not any(c["type"] == "channel" for c in chats.values()):
+            print(f"  ℹ️  No channel yet. Do this now, while the script waits:\n"
+                  f"     1. Open your channel → tap its name → Administrators → Add Admin\n"
+                  f"     2. Search @{bot['username']}, turn on 'Post messages', save\n"
+                  f"     3. Post any message in the channel")
+            chats.update(wait_for_chats())
         if chats:
             for chat in chats.values():
                 ok(f"{chat['type']}: '{chat.get('title') or chat.get('username') or chat.get('first_name')}' "

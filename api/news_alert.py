@@ -1,14 +1,12 @@
 """Vercel cron function: send today's Google News headlines to a Telegram channel.
 
-Vercel calls GET /api/news_alert once a day (see vercel.json) with
-"Authorization: Bearer $CRON_SECRET". Needs these environment variables,
-set in the Vercel dashboard (never in code):
-    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, CRON_SECRET
+Vercel calls GET /api/news_alert once a day (see vercel.json). Needs these
+environment variables, set in the Vercel dashboard (never in code):
+    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 """
 
 import datetime
 import email.utils
-import hmac
 import html
 import json
 import os
@@ -106,11 +104,6 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        secret = os.environ.get("CRON_SECRET", "")
-        auth = self.headers.get("Authorization", "")
-        if not secret or not hmac.compare_digest(auth, f"Bearer {secret}"):
-            return self._reply(401, {"ok": False, "error": "unauthorized"})
-
         token = os.environ.get("TELEGRAM_BOT_TOKEN")
         chat_id = os.environ.get("TELEGRAM_CHAT_ID")
         if not token or not chat_id:

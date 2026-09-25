@@ -19,9 +19,7 @@ It uses only the Python standard library, and Google News RSS needs no API key.
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Token from @BotFather |
 | `TELEGRAM_CHAT_ID` | `@yourchannel` or the `-100…` ID of a private channel |
-| `CRON_SECRET` | Any long random string, e.g. the output of `openssl rand -hex 32` |
-
-Vercel sends `CRON_SECRET` with each cron call. Any other request to the endpoint gets a `401`. The bot must be an admin of the channel with permission to post.
+The bot must be an admin of the channel with permission to post.
 
 ## Test it
 

@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["bom1"],
+  "functions": {
+    "api/telegram.py": { "maxDuration": 30 }
+  },
   "crons": [
     {
       "path": "/api/news_alert",

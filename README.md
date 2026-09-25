@@ -18,7 +18,7 @@ It uses only the Python standard library. Google News RSS needs no API key.
 | `TELEGRAM_BOT_TOKEN` | both | Token from @BotFather |
 | `GEMINI_API_KEY` | chatbot | Key from Google AI Studio |
 | `TELEGRAM_CHAT_ID` | news alert | `@yourchannel` or the `-100…` ID of a private channel (the bot must be a channel admin) |
-| `GEMINI_MODEL` | optional | Defaults to `gemini-2.5-flash` |
+| `GEMINI_MODEL` | optional | Defaults to `gemini-3.8-flash`. If Google retires it, the bot switches to the newest available Flash model automatically |
 
 After adding or changing a variable, redeploy (Deployments → ⋯ → Redeploy).
 

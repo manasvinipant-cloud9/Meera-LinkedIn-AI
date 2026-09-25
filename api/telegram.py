@@ -4,7 +4,7 @@ Telegram POSTs every message to /api/telegram (registered once via /api/setup).
 Needs these environment variables, set in the Vercel dashboard (never in code):
     TELEGRAM_BOT_TOKEN, GEMINI_API_KEY
 Optional:
-    GEMINI_MODEL (default gemini-2.5-flash)
+    GEMINI_MODEL (default gemini-3.8-flash; retired models are replaced automatically)
 """
 
 import datetime
@@ -24,6 +24,8 @@ from _persona import SYSTEM_PROMPT  # noqa: E402
 from news_alert import IST, build_message, todays_pillar  # noqa: E402
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"
+DEFAULT_MODEL = "gemini-3.8-flash"  # falls back to the newest available Flash model if this is retired
 MAX_LEN = 4000
 
 WELCOME = ("Hi, I'm Meera, founder of Skinstinct. Ask me about an ingredient, a label claim, "
@@ -37,11 +39,30 @@ def webhook_secret(token):
     return hashlib.sha256(("webhook:" + token).encode()).hexdigest()[:48]
 
 
-def ask_gemini(question):
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
-        return "The bot isn't fully set up yet: GEMINI_API_KEY is missing."
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+_model_cache = {}
+
+
+def _version(name):
+    # "models/gemini-3.8-flash" -> (3, 8); unversioned aliases sort last.
+    match = re.search(r"gemini-(\d+)(?:\.(\d+))?", name)
+    return (int(match.group(1)), int(match.group(2) or 0)) if match else (-1, 0)
+
+
+def newest_flash_model(key):
+    """Ask Google which models this key can use and pick the newest stable Flash model."""
+    req = urllib.request.Request(MODELS_URL, headers={"x-goog-api-key": key})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        models = json.load(resp).get("models", [])
+    usable = [m["name"].split("/", 1)[-1] for m in models
+              if "generateContent" in m.get("supportedGenerationMethods", [])
+              and "flash" in m["name"] and "lite" not in m["name"]
+              and not re.search(r"preview|exp|tts|image|audio|live", m["name"])]
+    if not usable:
+        return None
+    return max(usable, key=lambda name: (_version(name), -len(name)))
+
+
+def _generate(model, key, question):
     payload = {
         "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": question}]}],
@@ -52,14 +73,34 @@ def ask_gemini(question):
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "x-goog-api-key": key},
     )
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        return json.load(resp)
+
+
+def ask_gemini(question):
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        return "The bot isn't fully set up yet: GEMINI_API_KEY is missing."
+    model = _model_cache.get("model") or os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
     try:
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            data = json.load(resp)
+        try:
+            data = _generate(model, key, question)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+            # Model retired or unavailable to this key: switch to the newest one it can use.
+            replacement = newest_flash_model(key)
+            if not replacement or replacement == model:
+                raise
+            print(f"Gemini model {model} unavailable; using {replacement}")
+            model = replacement
+            data = _generate(model, key, question)
+        _model_cache["model"] = model
     except urllib.error.HTTPError as exc:
-        print(f"Gemini error {exc.code}: {exc.read()[:500]!r}")
+        print(f"Gemini error {exc.code} ({model}): {exc.read()[:500]!r}")
         return "Sorry, I couldn't answer that just now. Please try again in a minute."
     except Exception as exc:
-        print(f"Gemini request failed: {exc}")
+        print(f"Gemini request failed ({model}): {exc}")
         return "Sorry, I couldn't answer that just now. Please try again in a minute."
 
     try:
